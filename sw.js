@@ -1,5 +1,5 @@
 // Offline support. Bump VERSION whenever you change index.html so devices pick up the new copy.
-const VERSION = 'scales-v2';
+const VERSION = 'scales-v3';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest',
   'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'];
 

@@ -427,14 +427,31 @@ function model(){
 }
 
 // ---------- Audio ----------
-let actx=null, master=null;
+let actx=null, master=null, silentEl=null;
+// iOS mutes Web Audio when the phone is in silent mode. Asking for the "playback" audio session
+// (iOS 17+), or keeping a silent <audio> element running on older iOS, makes it behave like a music app.
+function silentWavURL(){
+  const n=8000, buf=new ArrayBuffer(44+n), v=new DataView(buf);
+  const w=(o,str)=>{for(let i=0;i<str.length;i++)v.setUint8(o+i,str.charCodeAt(i));};
+  w(0,'RIFF');v.setUint32(4,36+n,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);
+  v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,8000,true);v.setUint32(28,8000,true);
+  v.setUint16(32,1,true);v.setUint16(34,8,true);w(36,'data');v.setUint32(40,n,true);
+  for(let i=0;i<n;i++)v.setUint8(44+i,128);
+  return URL.createObjectURL(new Blob([buf],{type:'audio/wav'}));
+}
 function ac(){
   if(!actx){
+    try{ if(navigator.audioSession) navigator.audioSession.type='playback'; }catch(e){}
     const C=window.AudioContext||window.webkitAudioContext; if(!C)return null;
     actx=new C(); master=actx.createGain(); master.gain.value=.32;
-    const comp=actx.createDynamicsCompressor(); master.connect(comp).connect(actx.destination);
+    const comp=actx.createDynamicsCompressor(); master.connect(comp); comp.connect(actx.destination);
+    // Unlock: a one-sample silent buffer started inside the tap
+    try{const b=actx.createBuffer(1,1,22050),src=actx.createBufferSource();src.buffer=b;src.connect(actx.destination);src.start(0);}catch(e){}
+    if(!navigator.audioSession){
+      try{silentEl=new Audio(silentWavURL());silentEl.loop=true;silentEl.setAttribute('playsinline','');silentEl.play().catch(()=>{});}catch(e){}
+    }
   }
-  if(actx.state!=='running'){try{actx.resume();}catch(e){}}
+  if(silentEl&&silentEl.paused){silentEl.play().catch(()=>{});}
   return actx;
 }
 function tone(midi,when,dur,vel){
@@ -453,8 +470,12 @@ function tone(midi,when,dur,vel){
   o1.start(when);o2.start(when);o1.stop(when+dur+.05);o2.stop(when+dur+.05);
 }
 function play(midis,gap,dur){
-  try{const c=ac(); if(!c)return; const t0=c.currentTime+.03, v=.55/Math.sqrt(Math.max(1,midis.length*(gap<.05?1:.35)));
-    midis.forEach((m,i)=>tone(m,t0+i*gap,dur,v));}catch(e){}
+  try{
+    const c=ac(); if(!c)return;
+    const go=()=>{const t0=c.currentTime+.04, v=.55/Math.sqrt(Math.max(1,midis.length*(gap<.05?1:.35)));
+      midis.forEach((m,i)=>tone(m,t0+i*gap,dur,v));};
+    if(c.state!=='running'){const r=c.resume(); if(r&&r.then)r.then(go,go); else go();} else go();
+  }catch(e){}
 }
 function voicing(ch){
   const start=48+ch.root.pc;
